@@ -1,0 +1,209 @@
+import sqlite3
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+import csv
+import re
+import logging
+
+# Database initialization
+def initialize_db():
+    conn = sqlite3.connect('contacts.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS contacts
+                 (name TEXT PRIMARY KEY, phone TEXT, email TEXT, address TEXT)''')
+    conn.commit()
+    conn.close()
+
+# Validation functions
+def validate_email(email):
+    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    return re.match(pattern, email) is not None
+
+def validate_phone(phone):
+    pattern = r'^\+?1?\d{9,15}$'
+    return re.match(pattern, phone) is not None
+
+# Contact operations
+def add_contact():
+    name = input("Enter contact name: ").strip()
+    phone = input("Enter phone number: ").strip()
+    email = input("Enter email address: ").strip()
+    address = input("Enter address: ").strip()
+    
+    if not validate_phone(phone):
+        print("Invalid phone number. Please try again.")
+        return
+    if not validate_email(email):
+        print("Invalid email address. Please try again.")
+        return
+    
+    conn = sqlite3.connect('contacts.db')
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO contacts VALUES (?, ?, ?, ?)", (name, phone, email, address))
+        conn.commit()
+        print(f"\n{name} has been added to contacts.")
+        logging.info(f"New contact added: {name}")
+    except sqlite3.IntegrityError:
+        print(f"\n{name} already exists in contacts.")
+    finally:
+        conn.close()
+
+def view_contacts():
+    conn = sqlite3.connect('contacts.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM contacts")
+    contacts = c.fetchall()
+    conn.close()
+
+    if not contacts:
+        print("\nNo contacts found yet.")
+    else:
+        print("\nContacts List:")
+        for contact in contacts:
+            print(f"Name: {contact[0]}, Phone: {contact[1]}")
+
+def search_contact():
+    search_term = input("Enter the name or phone number you want to search: ").strip().lower()
+    conn = sqlite3.connect('contacts.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM contacts WHERE LOWER(name) LIKE ? OR phone LIKE ?", ('%'+search_term+'%', '%'+search_term+'%'))
+    results = c.fetchall()
+    conn.close()
+
+    if not results:
+        print("\nNo contact found.")
+    else:
+        for contact in results:
+            print(f"\nName: {contact[0]}")
+            print(f"Phone: {contact[1]}")
+            print(f"Email: {contact[2]}")
+            print(f"Address: {contact[3]}")
+
+def update_contact():
+    name = input("Enter contact name to update: ").strip()
+    conn = sqlite3.connect('contacts.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM contacts WHERE name = ?", (name,))
+    contact = c.fetchone()
+    
+    if contact:
+        print("\nWhat do you want to update?")
+        print("1. Phone")
+        print("2. Email")
+        print("3. Address")
+        choice = input("Enter your choice (1/2/3): ").strip()
+        
+        if choice == '1':
+            new_phone = input("Enter new phone number: ").strip()
+            if validate_phone(new_phone):
+                c.execute("UPDATE contacts SET phone = ? WHERE name = ?", (new_phone, name))
+            else:
+                print("Invalid phone number. Update cancelled.")
+        elif choice == '2':
+            new_email = input("Enter new email address: ").strip()
+            if validate_email(new_email):
+                c.execute("UPDATE contacts SET email = ? WHERE name = ?", (new_email, name))
+            else:
+                print("Invalid email address. Update cancelled.")
+        elif choice == '3':
+            new_address = input("Enter new address: ").strip()
+            c.execute("UPDATE contacts SET address = ? WHERE name = ?", (new_address, name))
+        else:
+            print("Invalid choice.")
+            conn.close()
+            return
+        
+        conn.commit()
+        print(f"\n{name}'s contact has been updated.")
+        logging.info(f"Contact updated: {name}")
+    else:
+        print(f"\n{name} not found in contacts.")
+    
+    conn.close()
+
+def delete_contact():
+    name = input("Enter the name of the contact to delete: ").strip()
+    conn = sqlite3.connect('contacts.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM contacts WHERE name = ?", (name,))
+    if c.rowcount > 0:
+        conn.commit()
+        print(f"\n{name} has been deleted from contacts.")
+        logging.info(f"Contact deleted: {name}")
+    else:
+        print(f"\n{name} not found in contacts.")
+    conn.close()
+
+# Data export/import
+def export_contacts():
+    conn = sqlite3.connect('contacts.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM contacts")
+    contacts = c.fetchall()
+    conn.close()
+
+    with open('contacts.csv', 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["Name", "Phone", "Email", "Address"])
+        writer.writerows(contacts)
+    print("Contacts exported to contacts.csv")
+
+def import_contacts():
+    try:
+        with open('contacts.csv', 'r') as file:
+            reader = csv.reader(file)
+            next(reader)  # Skip header
+            conn = sqlite3.connect('contacts.db')
+            c = conn.cursor()
+            for row in reader:
+                try:
+                    c.execute("INSERT INTO contacts VALUES (?, ?, ?, ?)", row)
+                except sqlite3.IntegrityError:
+                    print(f"Contact {row[0]} already exists, skipping.")
+            conn.commit()
+            conn.close()
+        print("Contacts imported successfully.")
+    except FileNotFoundError:
+        print("contacts.csv file not found.")
+
+def main_menu():
+    while True:
+        print("\n--- Contact Management System ---")
+        print("1. Add Contact")
+        print("2. View Contacts")
+        print("3. Search Contact")
+        print("4. Update Contact")
+        print("5. Delete Contact")
+        print("6. Export Contacts")
+        print("7. Import Contacts")
+        print("8. Exit")
+
+        choice = input("Enter your choice (1-8): ").strip()
+        
+        if choice == '1':
+            add_contact()
+        elif choice == '2':
+            view_contacts()
+        elif choice == '3':
+            search_contact()
+        elif choice == '4':
+            update_contact()
+        elif choice == '5':
+            delete_contact()
+        elif choice == '6':
+            export_contacts()
+        elif choice == '7':
+            import_contacts()
+        elif choice == '8':
+            print("Thank you for using Contact Management System!")
+            break
+        else:
+            print("Invalid choice. Please choose a number between 1 to 8.")
+
+# Logging setup
+logging.basicConfig(filename='contact_management.log', level=logging.INFO)
+
+if __name__ == "__main__":
+    initialize_db()
+    main_menu()
